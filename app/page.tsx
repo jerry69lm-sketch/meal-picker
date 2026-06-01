@@ -9,8 +9,8 @@ export type MealType = "午餐" | "晚餐";
 export interface Restaurant {
   place_id: string;
   name: string;
-  rating: number | null;       // 0–5 (converted from Foursquare's 0–10)
-  rating_raw: number | null;   // original 0–10
+  rating: number | null;
+  rating_raw: number | null;
   user_ratings_total: number;
   vicinity: string;
   types: string[];
@@ -49,68 +49,72 @@ export default function Home() {
     setShowSettings(false);
   };
 
-  const pick = useCallback((lat: number, lng: number, r: number, min: number) => {
-    // Use text() first to avoid "Unexpected end of JSON input" on empty responses
-    fetch(`/api/places?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&radius=${r}`)
-      .then((res) => res.text())
-      .then((text) => {
-        if (!text || text.trim() === "") {
-          setState({ kind: "error", message: "伺服器未回應，請稍後再試" });
-          return;
-        }
-        let data: { error?: string; results?: Restaurant[] };
-        try {
-          data = JSON.parse(text);
-        } catch {
-          setState({ kind: "error", message: "伺服器回應格式錯誤，請稍後再試" });
-          return;
-        }
-        if (data.error) {
-          setState({ kind: "error", message: data.error });
-          return;
-        }
-        const results: Restaurant[] = Array.isArray(data.results) ? data.results : [];
-        const filtered = results.filter(
-          (p) => p.rating === null || p.rating === undefined || p.rating >= min
-        );
-        if (filtered.length === 0) { setState({ kind: "empty" }); return; }
-        const picked = filtered[Math.floor(Math.random() * filtered.length)];
-        setState({ kind: "result", restaurant: picked });
-        setShowResult(true);
-      })
-      .catch((e: unknown) => setState({ kind: "error", message: e instanceof Error ? e.message : "網路錯誤，請稍後再試" }));
+  const pick = useCallback(async (lat: number, lng: number, r: number, min: number) => {
+    try {
+      const res = await fetch(`/api/places?lat=${lat}&lng=${lng}&radius=${r}`);
+      const text = await res.text();
+
+      if (!text || text.trim() === "") {
+        setState({ kind: "error", message: "伺服器未回應，請稍後再試" });
+        return;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = JSON.parse(text) as any;
+
+      if (data.error) {
+        setState({ kind: "error", message: String(data.error) });
+        return;
+      }
+
+      const results: Restaurant[] = Array.isArray(data.results) ? data.results : [];
+      const filtered = results.filter(
+        (p) => p.rating === null || p.rating === undefined || Number(p.rating) >= min
+      );
+
+      if (filtered.length === 0) {
+        setState({ kind: "empty" });
+        return;
+      }
+
+      const picked = filtered[Math.floor(Math.random() * filtered.length)];
+      setState({ kind: "result", restaurant: picked });
+      setShowResult(true);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "網路錯誤，請稍後再試";
+      setState({ kind: "error", message: msg });
+    }
   }, []);
 
   const handlePick = () => {
     setState({ kind: "loading" });
     setShowResult(false);
+
     if (!navigator.geolocation) {
       setState({ kind: "error", message: "此瀏覽器不支援定位功能" });
       return;
     }
+
     try {
       navigator.geolocation.getCurrentPosition(
-        (pos) => pick(pos.coords.latitude, pos.coords.longitude, radius, minRating),
-        (err) => {
-          // iOS Safari sometimes throws unusual error messages — normalise them all
-          const denied = err.code === 1 ||
-            err.message?.toLowerCase().includes("denied") ||
-            err.message?.toLowerCase().includes("pattern");
-          setState({
-            kind: "error",
-            message: denied
-              ? "請到 iPhone 設定 → 隱私權 → 定位服務 → Safari → 允許"
-              : "無法取得位置，請確認定位已開啟",
-          });
+        (pos) => {
+          void pick(pos.coords.latitude, pos.coords.longitude, radius, minRating);
+        },
+        () => {
+          setState({ kind: "error", message: "請到 iPhone 設定 → 隱私權 → 定位服務 → Safari → 允許" });
         },
         { timeout: 12000, enableHighAccuracy: false, maximumAge: 60000 }
       );
     } catch {
-      setState({ kind: "error", message: "請到 iPhone 設定 → 隱私權 → 定位服務 → Safari → 允許" });
+      setState({ kind: "error", message: "無法存取定位，請確認權限已開啟" });
     }
   };
 
-  const handlePickAgain = () => { setShowResult(false); setTimeout(handlePick, 200); };
+  const handlePickAgain = () => {
+    setShowResult(false);
+    setTimeout(handlePick, 200);
+  };
+
   const isLoading = state.kind === "loading";
 
   return (
@@ -121,7 +125,6 @@ export default function Home() {
         <button
           onClick={() => setShowSettings(true)}
           className="w-10 h-10 rounded-full bg-white/70 flex items-center justify-center shadow-sm text-gray-500 hover:bg-white transition"
-          aria-label="設定"
         >⚙️</button>
       </div>
 
@@ -131,7 +134,7 @@ export default function Home() {
         <h1 className="text-4xl font-bold text-gray-800 tracking-tight">現在吃什麼？</h1>
       </div>
 
-      {/* Meal type selector */}
+      {/* Meal type */}
       <div className="flex gap-4 mt-10 w-full max-w-sm">
         {(["午餐", "晚餐"] as MealType[]).map((type) => (
           <button
@@ -163,7 +166,6 @@ export default function Home() {
         搜尋範圍：{radius < 1000 ? `${radius} 公尺` : "1 公里"}內｜評分 ≥ {minRating.toFixed(1)} ⭐
       </p>
 
-      {/* Error / empty messages */}
       {state.kind === "error" && (
         <div className="mt-5 w-full max-w-sm bg-red-50 border border-red-200 rounded-2xl px-4 py-3 text-sm text-red-600 text-center">
           ⚠️ {state.message}
@@ -171,11 +173,10 @@ export default function Home() {
       )}
       {state.kind === "empty" && (
         <div className="mt-5 w-full max-w-sm bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-sm text-amber-700 text-center">
-          😔 附近找不到符合條件的餐廳，試試放寬搜尋範圍或降低最低評分
+          😔 附近找不到餐廳，試試放寬搜尋範圍或降低最低評分
         </div>
       )}
 
-      {/* Result bottom sheet */}
       {showResult && state.kind === "result" && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowResult(false)} />
