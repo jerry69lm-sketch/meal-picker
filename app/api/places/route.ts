@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   url.searchParams.set("categories", "13065");
   url.searchParams.set("limit", "50");
   // Request rating + photos + location in one call
-  url.searchParams.set("fields", "fsq_id,name,rating,stats,location,categories,photos,distance");
+  url.searchParams.set("fields", "fsq_id,name,rating,stats,location,geocodes,categories,photos,distance");
 
   const res = await fetch(url.toString(), {
     headers: {
@@ -53,8 +53,8 @@ export async function GET(req: NextRequest) {
     vicinity: place.location?.formatted_address ?? place.location?.address ?? "",
     types: (place.categories ?? []).map((c) => c.name),
     distance: place.distance ?? 0,
-    // First photo from Foursquare: prefix + "300x300" + suffix
-    photo: place.photos?.[0]
+    // First photo from Foursquare: prefix + size + suffix
+    photo: place.photos?.[0]?.prefix && place.photos?.[0]?.suffix
       ? `${place.photos[0].prefix}400x300${place.photos[0].suffix}`
       : null,
     geometry: {
