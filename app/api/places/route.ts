@@ -24,13 +24,22 @@ export async function GET(req: NextRequest) {
       fields: "fsq_id,name,rating,stats,location,geocodes,categories,photos,distance",
     });
 
-    const res = await fetch(
-      `https://api.foursquare.com/v3/places/search?${params.toString()}`,
-      {
-        headers: { Authorization: apiKey, Accept: "application/json" },
-        cache: "no-store",
-      }
-    );
+    // 8-second timeout so Vercel doesn't kill the function first
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+
+    let res: Response;
+    try {
+      res = await fetch(
+        `https://api.foursquare.com/v3/places/search?${params.toString()}`,
+        {
+          headers: { Authorization: apiKey, Accept: "application/json" },
+          signal: controller.signal,
+        }
+      );
+    } finally {
+      clearTimeout(timer);
+    }
 
     const json: any = await res.json();
 
