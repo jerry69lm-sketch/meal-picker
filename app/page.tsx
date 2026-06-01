@@ -78,7 +78,7 @@ export default function Home() {
         setState({ kind: "result", restaurant: picked });
         setShowResult(true);
       })
-      .catch((e: Error) => setState({ kind: "error", message: e?.message ?? "網路錯誤，請稍後再試" }));
+      .catch((e: unknown) => setState({ kind: "error", message: e instanceof Error ? e.message : "網路錯誤，請稍後再試" }));
   }, []);
 
   const handlePick = () => {
