@@ -43,12 +43,21 @@ export async function GET(req: NextRequest) {
     if (!res.ok) {
       console.error("Foursquare error:", res.status, text);
       return NextResponse.json(
-        { error: `Foursquare 錯誤 (${res.status}): ${text}` },
+        { error: `Foursquare 錯誤 (${res.status})` },
         { status: 502 }
       );
     }
 
-    const data = JSON.parse(text);
+    if (!text || text.trim() === "") {
+      return NextResponse.json({ error: "Foursquare 回傳空回應" }, { status: 502 });
+    }
+
+    let data: { results?: FoursquarePlace[] };
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return NextResponse.json({ error: "Foursquare 回應格式錯誤" }, { status: 502 });
+    }
 
     const results = (data.results ?? []).map((place: FoursquarePlace) => {
       // Safely build photo URL

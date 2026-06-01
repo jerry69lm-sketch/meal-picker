@@ -50,31 +50,35 @@ export default function Home() {
   };
 
   const pick = useCallback((lat: number, lng: number, r: number, min: number) => {
+    // Use text() first to avoid "Unexpected end of JSON input" on empty responses
     fetch(`/api/places?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&radius=${r}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data) => {
-        if (!data || data.error) {
-          setState({ kind: "error", message: data?.error ?? "無法取得餐廳資料" });
+      .then((res) => res.text())
+      .then((text) => {
+        if (!text || text.trim() === "") {
+          setState({ kind: "error", message: "伺服器未回應，請稍後再試" });
           return;
         }
-
+        let data: { error?: string; results?: Restaurant[] };
+        try {
+          data = JSON.parse(text);
+        } catch {
+          setState({ kind: "error", message: "伺服器回應格式錯誤，請稍後再試" });
+          return;
+        }
+        if (data.error) {
+          setState({ kind: "error", message: data.error });
+          return;
+        }
         const results: Restaurant[] = Array.isArray(data.results) ? data.results : [];
-
-        // Filter by minimum star rating (0–5 scale); include places with no rating
         const filtered = results.filter(
           (p) => p.rating === null || p.rating === undefined || p.rating >= min
         );
-
         if (filtered.length === 0) { setState({ kind: "empty" }); return; }
-
         const picked = filtered[Math.floor(Math.random() * filtered.length)];
         setState({ kind: "result", restaurant: picked });
         setShowResult(true);
       })
-      .catch(() => setState({ kind: "error", message: "網路錯誤，請稍後再試" }));
+      .catch((e: Error) => setState({ kind: "error", message: e?.message ?? "網路錯誤，請稍後再試" }));
   }, []);
 
   const handlePick = () => {
