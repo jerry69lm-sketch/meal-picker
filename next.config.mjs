@@ -2,10 +2,9 @@
 const nextConfig = {
   images: {
     remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "maps.googleapis.com",
-      },
+      // Foursquare photo CDN
+      { protocol: "https", hostname: "fastly.4sqi.net" },
+      { protocol: "https", hostname: "*.4sqi.net" },
     ],
   },
 };
