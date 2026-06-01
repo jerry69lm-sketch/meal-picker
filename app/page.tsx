@@ -50,14 +50,22 @@ export default function Home() {
   };
 
   const pick = useCallback((lat: number, lng: number, r: number, min: number) => {
-    fetch(`/api/places?lat=${lat}&lng=${lng}&radius=${r}`)
-      .then((res) => res.json())
+    fetch(`/api/places?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&radius=${r}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((data) => {
-        if (data.error) { setState({ kind: "error", message: data.error }); return; }
+        if (!data || data.error) {
+          setState({ kind: "error", message: data?.error ?? "無法取得餐廳資料" });
+          return;
+        }
 
-        // Filter by minimum star rating (0–5 scale)
-        const filtered: Restaurant[] = (data.results ?? []).filter(
-          (p: Restaurant) => p.rating === null || p.rating >= min
+        const results: Restaurant[] = Array.isArray(data.results) ? data.results : [];
+
+        // Filter by minimum star rating (0–5 scale); include places with no rating
+        const filtered = results.filter(
+          (p) => p.rating === null || p.rating === undefined || p.rating >= min
         );
 
         if (filtered.length === 0) { setState({ kind: "empty" }); return; }
@@ -66,7 +74,7 @@ export default function Home() {
         setState({ kind: "result", restaurant: picked });
         setShowResult(true);
       })
-      .catch((e) => setState({ kind: "error", message: "網路錯誤，請稍後再試" }));
+      .catch(() => setState({ kind: "error", message: "網路錯誤，請稍後再試" }));
   }, []);
 
   const handlePick = () => {
