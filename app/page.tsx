@@ -66,7 +66,7 @@ export default function Home() {
         setState({ kind: "result", restaurant: picked });
         setShowResult(true);
       })
-      .catch((e) => setState({ kind: "error", message: e.message }));
+      .catch((e) => setState({ kind: "error", message: "網路錯誤，請稍後再試" }));
   }, []);
 
   const handlePick = () => {
@@ -76,14 +76,26 @@ export default function Home() {
       setState({ kind: "error", message: "此瀏覽器不支援定位功能" });
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => pick(pos.coords.latitude, pos.coords.longitude, radius, minRating),
-      (err) => setState({
-        kind: "error",
-        message: err.code === 1 ? "請允許瀏覽器存取您的位置" : "無法取得位置，請確認定位已開啟",
-      }),
-      { timeout: 10000 }
-    );
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => pick(pos.coords.latitude, pos.coords.longitude, radius, minRating),
+        (err) => {
+          // iOS Safari sometimes throws unusual error messages — normalise them all
+          const denied = err.code === 1 ||
+            err.message?.toLowerCase().includes("denied") ||
+            err.message?.toLowerCase().includes("pattern");
+          setState({
+            kind: "error",
+            message: denied
+              ? "請到 iPhone 設定 → 隱私權 → 定位服務 → Safari → 允許"
+              : "無法取得位置，請確認定位已開啟",
+          });
+        },
+        { timeout: 12000, enableHighAccuracy: false, maximumAge: 60000 }
+      );
+    } catch {
+      setState({ kind: "error", message: "請到 iPhone 設定 → 隱私權 → 定位服務 → Safari → 允許" });
+    }
   };
 
   const handlePickAgain = () => { setShowResult(false); setTimeout(handlePick, 200); };
