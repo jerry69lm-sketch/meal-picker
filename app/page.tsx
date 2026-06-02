@@ -163,7 +163,7 @@ export default function Home() {
       </button>
 
       <p className="mt-3 text-sm text-gray-400">
-        搜尋範圍：{radius < 1000 ? `${radius} 公尺` : "1 公里"}內｜評分 ≥ {minRating.toFixed(1)} ⭐
+        搜尋範圍：{radius < 1000 ? `${radius} 公尺` : "1 公里"}內的所有餐廳
       </p>
 
       {state.kind === "error" && (

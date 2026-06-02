@@ -5,40 +5,28 @@ import https from "node:https";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function foursquareRequest(path: string, apiKey: string): Promise<any> {
+function httpGet(hostname: string, path: string, body?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const options: https.RequestOptions = {
-      hostname: "api.foursquare.com",
+      hostname,
       path,
-      method: "GET",
+      method: body ? "POST" : "GET",
       headers: {
-        Authorization: apiKey,
-        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent": "MealPicker/1.0",
+        ...(body ? { "Content-Length": Buffer.byteLength(body) } : {}),
       },
     };
 
     const req = https.request(options, (res) => {
       const chunks: Buffer[] = [];
-      res.on("data", (chunk: Buffer) => chunks.push(chunk));
-      res.on("end", () => {
-        const body = Buffer.concat(chunks).toString("utf8");
-        if (!body) { reject(new Error("Empty response from Foursquare")); return; }
-        try {
-          const json = JSON.parse(body);
-          if ((res.statusCode ?? 200) >= 400) {
-            reject(new Error(`Foursquare ${res.statusCode}: ${json.message ?? body}`));
-          } else {
-            resolve(json);
-          }
-        } catch {
-          reject(new Error(`Bad JSON: ${body.slice(0, 80)}`));
-        }
-      });
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     });
 
-    req.setTimeout(9000, () => { req.destroy(); reject(new Error("Foursquare request timed out")); });
-    req.on("error", (e) => reject(e));
+    req.setTimeout(10000, () => { req.destroy(); reject(new Error("Request timed out")); });
+    req.on("error", reject);
+    if (body) req.write(body);
     req.end();
   });
 }
@@ -53,52 +41,52 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Missing lat/lng" }, { status: 400 });
     }
 
-    const apiKey = process.env.FOURSQUARE_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: "FOURSQUARE_API_KEY not set in environment" }, { status: 500 });
+    // Overpass API — completely free, no key, works everywhere
+    const query = `[out:json][timeout:9];(node["amenity"~"restaurant|cafe|fast_food|food_court"](around:${radius},${lat},${lng});way["amenity"~"restaurant|cafe|fast_food|food_court"](around:${radius},${lat},${lng}););out center body 60;`;
+    const body = `data=${encodeURIComponent(query)}`;
+
+    const raw = await httpGet("overpass-api.de", "/api/interpreter", body);
+
+    if (!raw || raw.trim() === "") {
+      return NextResponse.json({ error: "No response from map server" }, { status: 502 });
     }
 
-    const params = new URLSearchParams({
-      ll: `${lat},${lng}`,
-      radius,
-      categories: "13065",
-      limit: "50",
-      fields: "fsq_id,name,rating,stats,location,geocodes,categories,photos,distance",
-    });
+    const data = JSON.parse(raw) as { elements: any[] };
 
-    const data = await foursquareRequest(
-      `/v3/places/search?${params.toString()}`,
-      apiKey
-    );
+    const results = (data.elements || [])
+      .filter((el: any) => el.tags?.name)
+      .map((el: any) => {
+        const tags = el.tags || {};
+        const elLat: number = el.lat ?? el.center?.lat ?? parseFloat(lat);
+        const elLng: number = el.lon ?? el.center?.lon ?? parseFloat(lng);
 
-    const results = ((data.results || []) as any[]).map((place: any) => {
-      let photo: string | null = null;
-      try {
-        const p = place.photos?.[0];
-        if (p?.prefix && p?.suffix) {
-          photo = `${p.prefix}400x300${p.suffix}`;
-          new URL(photo);
-        }
-      } catch { photo = null; }
+        // Build cuisine tags
+        const cuisines: string[] = tags.cuisine
+          ? tags.cuisine.split(";").map((c: string) => c.trim().replace(/_/g, " "))
+          : [];
+        const amenityLabel: Record<string, string> = {
+          restaurant: "餐廳", cafe: "咖啡廳", fast_food: "快餐",
+          food_court: "美食廣場",
+        };
+        const typeLabel = amenityLabel[tags.amenity] || "餐廳";
+        if (cuisines.length === 0) cuisines.push(typeLabel);
 
-      return {
-        place_id: place.fsq_id || String(Math.random()),
-        name: place.name || "未知餐廳",
-        rating: typeof place.rating === "number" ? place.rating / 2 : null,
-        rating_raw: place.rating ?? null,
-        user_ratings_total: place.stats?.total_ratings ?? 0,
-        vicinity: place.location?.formatted_address || place.location?.address || "",
-        types: ((place.categories || []) as any[]).map((c: any) => c.name),
-        distance: place.distance || 0,
-        photo,
-        geometry: {
-          location: {
-            lat: place.geocodes?.main?.latitude ?? parseFloat(lat),
-            lng: place.geocodes?.main?.longitude ?? parseFloat(lng),
-          },
-        },
-      };
-    });
+        const addressParts = [tags["addr:housenumber"], tags["addr:street"]].filter(Boolean);
+        const address = addressParts.join(" ") || tags["addr:full"] || tags["addr:city"] || "";
+
+        return {
+          place_id: String(el.id),
+          name: tags.name,
+          rating: null,
+          rating_raw: null,
+          user_ratings_total: 0,
+          vicinity: address,
+          types: cuisines.slice(0, 3),
+          distance: 0,
+          photo: null,
+          geometry: { location: { lat: elLat, lng: elLng } },
+        };
+      });
 
     return NextResponse.json({ results });
   } catch (e) {
