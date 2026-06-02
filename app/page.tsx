@@ -40,12 +40,13 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
 
 // Call Overpass directly from browser — avoids server-side rate limits
 async function fetchNearby(lat: number, lng: number, radius: string): Promise<Restaurant[]> {
-  const query = `[out:json][timeout:10];(node["amenity"~"restaurant|cafe|fast_food"](around:${radius},${lat},${lng});way["amenity"~"restaurant|cafe|fast_food"](around:${radius},${lat},${lng}););out center body 60;`;
+  // Nodes only (no ways) = much faster query
+  const query = `[out:json][timeout:8];node["amenity"~"restaurant|cafe|fast_food"](around:${radius},${lat},${lng});out 50;`;
 
   const mirrors = [
-    "https://overpass-api.de/api/interpreter",
-    "https://lz4.overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
   ];
 
   let lastError = "All map servers failed";
@@ -64,8 +65,8 @@ async function fetchNearby(lat: number, lng: number, radius: string): Promise<Re
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((el: any) => {
           const tags = el.tags as Record<string, string>;
-          const elLat: number = el.lat ?? el.center?.lat ?? lat;
-          const elLng: number = el.lon ?? el.center?.lon ?? lng;
+          const elLat: number = Number(el.lat) || lat;
+          const elLng: number = Number(el.lon) || lng;
           const cuisines: string[] = tags.cuisine
             ? tags.cuisine.split(";").map((c: string) => c.trim().replace(/_/g, " "))
             : [tags.amenity === "cafe" ? "咖啡廳" : "餐廳"];
