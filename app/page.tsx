@@ -55,16 +55,16 @@ async function fetchNearby(lat: number, lng: number, radius: string): Promise<Re
 export default function Home() {
   const [state, setState] = useState<AppState>({ kind: "idle" });
   const [mealType, setMealType] = useState<MealType>("午餐");
-  const [radius, setRadius] = useState<500 | 1000>(500);
+  const [radius, setRadius] = useState<number>(500);
   const [showSettings, setShowSettings] = useState(false);
   const [showResult, setShowResult] = useState(false);
 
   useEffect(() => {
     const r = localStorage.getItem("radius");
-    if (r) setRadius(Number(r) as 500 | 1000);
+    if (r) setRadius(Number(r));
   }, []);
 
-  const saveSettings = (r: 500 | 1000, m: number) => {
+  const saveSettings = (r: number, m: number) => {
     setRadius(r); localStorage.setItem("radius", String(r));
     setShowSettings(false); void m;
   };
@@ -135,7 +135,7 @@ export default function Home() {
       </button>
 
       <p className="mt-3 text-sm text-gray-400">
-        搜尋範圍：{radius < 1000 ? `${radius} 公尺` : "1 公里"}內的所有餐廳
+        搜尋範圍：{radius < 1000 ? `${radius} 公尺` : `${(radius / 1000).toFixed(1)} 公里`}內的所有餐廳
       </p>
 
       {state.kind === "error" && (
