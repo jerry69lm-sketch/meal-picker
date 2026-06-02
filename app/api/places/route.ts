@@ -1,7 +1,48 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
+import https from "node:https";
 
-// This route now just proxies with Node's native https to avoid undici "terminated" issues
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function foursquareRequest(path: string, apiKey: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const options: https.RequestOptions = {
+      hostname: "api.foursquare.com",
+      path,
+      method: "GET",
+      headers: {
+        Authorization: apiKey,
+        Accept: "application/json",
+        "User-Agent": "MealPicker/1.0",
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        if (!body) { reject(new Error("Empty response from Foursquare")); return; }
+        try {
+          const json = JSON.parse(body);
+          if ((res.statusCode ?? 200) >= 400) {
+            reject(new Error(`Foursquare ${res.statusCode}: ${json.message ?? body}`));
+          } else {
+            resolve(json);
+          }
+        } catch {
+          reject(new Error(`Bad JSON: ${body.slice(0, 80)}`));
+        }
+      });
+    });
+
+    req.setTimeout(9000, () => { req.destroy(); reject(new Error("Foursquare request timed out")); });
+    req.on("error", (e) => reject(e));
+    req.end();
+  });
+}
+
 export async function GET(req: NextRequest) {
   try {
     const lat = req.nextUrl.searchParams.get("lat");
@@ -14,7 +55,7 @@ export async function GET(req: NextRequest) {
 
     const apiKey = process.env.FOURSQUARE_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: "API key not configured" }, { status: 500 });
+      return NextResponse.json({ error: "FOURSQUARE_API_KEY not set in environment" }, { status: 500 });
     }
 
     const params = new URLSearchParams({
@@ -25,44 +66,10 @@ export async function GET(req: NextRequest) {
       fields: "fsq_id,name,rating,stats,location,geocodes,categories,photos,distance",
     });
 
-    const targetUrl = `https://api.foursquare.com/v3/places/search?${params}`;
-
-    // Use Node.js https directly — avoids undici "terminated" bug in Next.js
-    const data = await new Promise<any>((resolve, reject) => {
-      const https = require("https") as typeof import("https");
-      const options = {
-        hostname: "api.foursquare.com",
-        path: `/v3/places/search?${params}`,
-        method: "GET",
-        headers: {
-          Authorization: apiKey,
-          Accept: "application/json",
-          "User-Agent": "MealPicker/1.0",
-        },
-        timeout: 9000,
-      };
-
-      const request = https.request(options, (res) => {
-        let body = "";
-        res.on("data", (chunk: Buffer) => { body += chunk.toString(); });
-        res.on("end", () => {
-          try {
-            const parsed = JSON.parse(body);
-            if (res.statusCode && res.statusCode >= 400) {
-              reject(new Error(`Foursquare ${res.statusCode}: ${body}`));
-            } else {
-              resolve(parsed);
-            }
-          } catch {
-            reject(new Error(`Invalid JSON: ${body.slice(0, 100)}`));
-          }
-        });
-      });
-
-      request.on("error", reject);
-      request.on("timeout", () => { request.destroy(); reject(new Error("Request timed out")); });
-      request.end();
-    });
+    const data = await foursquareRequest(
+      `/v3/places/search?${params.toString()}`,
+      apiKey
+    );
 
     const results = ((data.results || []) as any[]).map((place: any) => {
       let photo: string | null = null;
