@@ -38,59 +38,18 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Call Overpass directly from browser — avoids server-side rate limits
+// Call via our Edge API route — avoids CORS and rate limiting
 async function fetchNearby(lat: number, lng: number, radius: string): Promise<Restaurant[]> {
-  // Nodes only (no ways) = much faster query
-  const query = `[out:json][timeout:8];node["amenity"~"restaurant|cafe|fast_food"](around:${radius},${lat},${lng});out 50;`;
-
-  const mirrors = [
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://lz4.overpass-api.de/api/interpreter",
-    "https://overpass-api.de/api/interpreter",
-  ];
-
-  let lastError = "All map servers failed";
-  for (const mirror of mirrors) {
-    try {
-      const res = await fetch(`${mirror}?data=${encodeURIComponent(query)}`);
-      const text = await res.text();
-      if (!text.trim().startsWith("{")) { lastError = `Server error (${res.status})`; continue; }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = JSON.parse(text) as { elements: any[] };
-
-      return (data.elements || [])
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .filter((el: any) => el.tags?.name)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .map((el: any) => {
-          const tags = el.tags as Record<string, string>;
-          const elLat: number = Number(el.lat) || lat;
-          const elLng: number = Number(el.lon) || lng;
-          const cuisines: string[] = tags.cuisine
-            ? tags.cuisine.split(";").map((c: string) => c.trim().replace(/_/g, " "))
-            : [tags.amenity === "cafe" ? "咖啡廳" : "餐廳"];
-          const addr = [tags["addr:housenumber"], tags["addr:street"]]
-            .filter(Boolean).join(" ") || tags["addr:full"] || "";
-
-          return {
-            place_id: String(el.id),
-            name: tags.name,
-            rating: null,
-            rating_raw: null,
-            user_ratings_total: 0,
-            vicinity: addr,
-            types: cuisines.slice(0, 3),
-            distance: haversine(lat, lng, elLat, elLng),
-            photo: null,
-            geometry: { location: { lat: elLat, lng: elLng } },
-          } as Restaurant;
-        });
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
-    }
-  }
-  throw new Error(lastError);
+  const res = await fetch(`/api/places?lat=${lat}&lng=${lng}&radius=${radius}`);
+  const text = await res.text();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = JSON.parse(text) as any;
+  if (data.error) throw new Error(data.error);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return ((data.results || []) as any[]).map((r: any) => ({
+    ...r,
+    distance: haversine(lat, lng, r.geometry.location.lat, r.geometry.location.lng),
+  })) as Restaurant[];
 }
 
 export default function Home() {
