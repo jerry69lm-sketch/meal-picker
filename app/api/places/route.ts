@@ -16,14 +16,33 @@ export async function GET(req: NextRequest) {
 
     // OpenStreetMap Overpass API — free, no key, no cloud IP blocking
     const query = `[out:json][timeout:9];(node["amenity"~"restaurant|cafe|fast_food"](around:${radius},${lat},${lng});way["amenity"~"restaurant|cafe|fast_food"](around:${radius},${lat},${lng}););out center body 60;`;
+    const postBody = `data=${encodeURIComponent(query)}`;
+    const headers = { "Content-Type": "application/x-www-form-urlencoded" };
 
-    const res = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(query)}`,
-    });
+    // Try primary mirror, fall back to secondary
+    const mirrors = [
+      "https://lz4.overpass-api.de/api/interpreter",
+      "https://overpass-api.de/api/interpreter",
+      "https://z.overpass-api.de/api/interpreter",
+    ];
 
-    const text = await res.text();
+    let text = "";
+    let lastError = "";
+    for (const mirror of mirrors) {
+      try {
+        const res = await fetch(mirror, { method: "POST", headers, body: postBody });
+        const raw = await res.text();
+        if (raw.trim().startsWith("{")) { text = raw; break; }
+        lastError = `Server returned HTML (status ${res.status})`;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    if (!text) {
+      return NextResponse.json({ error: `Map service unavailable: ${lastError}` }, { status: 502 });
+    }
+
     const data = JSON.parse(text) as { elements: any[] };
     const elements: any[] = data.elements || [];
 
