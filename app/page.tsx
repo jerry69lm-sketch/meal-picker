@@ -15,7 +15,7 @@ export interface Restaurant {
   vicinity: string;
   types: string[];
   distance: number;
-  photo: null;
+  photo: string | null;
   geometry: { location: { lat: number; lng: number } };
 }
 
