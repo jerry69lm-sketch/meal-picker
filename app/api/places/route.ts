@@ -16,24 +16,25 @@ export async function GET(req: NextRequest) {
 
     // OpenStreetMap Overpass API — free, no key, no cloud IP blocking
     const query = `[out:json][timeout:9];(node["amenity"~"restaurant|cafe|fast_food"](around:${radius},${lat},${lng});way["amenity"~"restaurant|cafe|fast_food"](around:${radius},${lat},${lng}););out center body 60;`;
-    const postBody = `data=${encodeURIComponent(query)}`;
-    const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+    const encoded = encodeURIComponent(query);
 
-    // Try primary mirror, fall back to secondary
+    // Try multiple mirrors with GET request (more reliable than POST)
     const mirrors = [
-      "https://lz4.overpass-api.de/api/interpreter",
       "https://overpass-api.de/api/interpreter",
-      "https://z.overpass-api.de/api/interpreter",
+      "https://lz4.overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter",
     ];
 
     let text = "";
     let lastError = "";
     for (const mirror of mirrors) {
       try {
-        const res = await fetch(mirror, { method: "POST", headers, body: postBody });
+        const res = await fetch(`${mirror}?data=${encoded}`, {
+          headers: { "Accept": "application/json" },
+        });
         const raw = await res.text();
         if (raw.trim().startsWith("{")) { text = raw; break; }
-        lastError = `Server returned HTML (status ${res.status})`;
+        lastError = `Status ${res.status}`;
       } catch (err) {
         lastError = err instanceof Error ? err.message : String(err);
       }
