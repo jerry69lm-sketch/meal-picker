@@ -145,17 +145,15 @@ out center 120;`;
       return true;
     });
 
-    const locals = unique.filter((p) => !p.chain);
-    const chains = unique.filter((p) => p.chain);
-
     if (highProtein) {
-      const proteinLocals = shuffle(locals.filter((p) => p.proteinScore > 0));
-      const otherLocals   = shuffle(locals.filter((p) => p.proteinScore === 0));
-      const proteinChains = shuffle(chains.filter((p) => p.proteinScore > 0));
-      const mixed = [...proteinLocals, ...proteinChains.slice(0, 1), ...otherLocals, ...chains.slice(0, 1)];
-      return NextResponse.json({ results: mixed });
+      // Strict mode: ONLY return restaurants with a protein score > 0
+      const proteinOnly = unique.filter((p) => p.proteinScore > 0);
+      return NextResponse.json({ results: shuffle(proteinOnly) });
     }
 
+    // Default: locals first, limit chains
+    const locals = unique.filter((p) => !p.chain);
+    const chains = unique.filter((p) => p.chain);
     const mixed = [...shuffle(locals), ...shuffle(chains).slice(0, 2)];
     return NextResponse.json({ results: shuffle(mixed) });
 
