@@ -4,11 +4,23 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
-// Chains we want to limit to max 1 appearance so they don't dominate
 const CHAIN_KEYWORDS = [
   "starbucks", "mcdonald", "kfc", "subway", "burger king", "pizza hut",
   "yoshinoya", "mos burger", "fairwood", "cafe de coral", "maxim",
   "七仔", "OK便利店", "circle k", "wellcome", "parknshop",
+];
+
+const HIGH_PROTEIN_CUISINES = [
+  "chicken", "steak", "japanese", "korean", "american", "burger",
+  "seafood", "fish", "beef", "bbq", "grill", "sushi", "ramen",
+  "hot_pot", "thai", "vietnamese", "mediterranean", "greek", "turkish",
+  "poke", "chinese", "dim_sum", "korean_bbq",
+];
+
+const HIGH_PROTEIN_NAME_KEYWORDS = [
+  "chicken", "steak", "beef", "fish", "poke", "protein", "grill", "bbq",
+  "sushi", "ramen", "salad", "bowl", "healthy", "fit",
+  "雞", "牛", "豬", "魚", "蛋", "燒", "燉", "烤", "炭", "扒",
 ];
 
 function isChain(name: string): boolean {
@@ -16,7 +28,19 @@ function isChain(name: string): boolean {
   return CHAIN_KEYWORDS.some((k) => lower.includes(k));
 }
 
-// Fisher-Yates shuffle for true randomness
+function getProteinScore(name: string, cuisines: string[]): number {
+  const lowerName = name.toLowerCase();
+  const cuisineStr = cuisines.join(" ").toLowerCase();
+  let score = 0;
+  for (const kw of HIGH_PROTEIN_NAME_KEYWORDS) {
+    if (lowerName.includes(kw)) score += 2;
+  }
+  for (const cu of HIGH_PROTEIN_CUISINES) {
+    if (cuisineStr.includes(cu)) score += 1;
+  }
+  return score;
+}
+
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -31,12 +55,12 @@ export async function GET(req: NextRequest) {
     const lat = req.nextUrl.searchParams.get("lat");
     const lng = req.nextUrl.searchParams.get("lng");
     const radius = req.nextUrl.searchParams.get("radius") || "500";
+    const highProtein = req.nextUrl.searchParams.get("highProtein") === "true";
 
     if (!lat || !lng) {
       return NextResponse.json({ error: "Missing lat/lng" }, { status: 400 });
     }
 
-    // Broader amenity search + exclude closed places + higher limit
     const query = `[out:json][timeout:10];
 (
   node["amenity"~"restaurant|cafe|fast_food|food_court|bar|pub"]["name"](around:${radius},${lat},${lng});
@@ -76,9 +100,7 @@ out center 120;`;
     const places = elements
       .filter((el: any) => {
         const tags = el.tags || {};
-        // Must have a name
         if (!tags.name) return false;
-        // Filter out places explicitly marked as closed/disused
         if (tags.disused === "yes") return false;
         if (tags["disused:amenity"]) return false;
         if (tags.opening_hours === "closed") return false;
@@ -87,7 +109,6 @@ out center 120;`;
       })
       .map((el: any) => {
         const tags = el.tags as Record<string, string>;
-        // way elements have a center, node elements have lat/lon directly
         const elLat: number = el.lat ?? el.center?.lat ?? parseFloat(lat);
         const elLng: number = el.lon ?? el.center?.lon ?? parseFloat(lng);
 
@@ -97,6 +118,8 @@ out center 120;`;
 
         const addr = [tags["addr:housenumber"], tags["addr:street"]]
           .filter(Boolean).join(" ") || tags["addr:full"] || tags["addr:city"] || "";
+
+        const proteinScore = getProteinScore(tags.name, cuisines);
 
         return {
           place_id: String(el.id),
@@ -109,11 +132,11 @@ out center 120;`;
           distance: 0,
           photo: null as null,
           chain: isChain(tags.name),
+          proteinScore,
           geometry: { location: { lat: elLat, lng: elLng } },
         };
       });
 
-    // De-duplicate by name (OSM sometimes has same place as node + way)
     const seen = new Set<string>();
     const unique = places.filter((p) => {
       const key = p.name.toLowerCase().trim();
@@ -122,16 +145,20 @@ out center 120;`;
       return true;
     });
 
-    // Separate chains and locals, shuffle each group independently
-    const locals = shuffle(unique.filter((p) => !p.chain));
-    const chains = shuffle(unique.filter((p) => p.chain));
+    const locals = unique.filter((p) => !p.chain);
+    const chains = unique.filter((p) => p.chain);
 
-    // Mix: mostly locals, chains appear less frequently
-    // Take up to 2 chains and the rest locals so chains don't dominate
-    const mixed = [...locals, ...chains.slice(0, 2)];
-    const results = shuffle(mixed);
+    if (highProtein) {
+      const proteinLocals = shuffle(locals.filter((p) => p.proteinScore > 0));
+      const otherLocals   = shuffle(locals.filter((p) => p.proteinScore === 0));
+      const proteinChains = shuffle(chains.filter((p) => p.proteinScore > 0));
+      const mixed = [...proteinLocals, ...proteinChains.slice(0, 1), ...otherLocals, ...chains.slice(0, 1)];
+      return NextResponse.json({ results: mixed });
+    }
 
-    return NextResponse.json({ results });
+    const mixed = [...shuffle(locals), ...shuffle(chains).slice(0, 2)];
+    return NextResponse.json({ results: shuffle(mixed) });
+
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Server error" },
