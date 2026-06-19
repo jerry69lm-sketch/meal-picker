@@ -16,6 +16,7 @@ export interface Restaurant {
   types: string[];
   distance: number;
   photo: string | null;
+  proteinScore: number;
   geometry: { location: { lat: number; lng: number } };
 }
 
@@ -38,9 +39,15 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Call via our Edge API route — avoids CORS and rate limiting
-async function fetchNearby(lat: number, lng: number, radius: string): Promise<Restaurant[]> {
-  const res = await fetch(`/api/places?lat=${lat}&lng=${lng}&radius=${radius}`);
+async function fetchNearby(
+  lat: number,
+  lng: number,
+  radius: string,
+  highProtein: boolean
+): Promise<Restaurant[]> {
+  const res = await fetch(
+    `/api/places?lat=${lat}&lng=${lng}&radius=${radius}&highProtein=${highProtein}`
+  );
   const text = await res.text();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = JSON.parse(text) as any;
@@ -56,17 +63,26 @@ export default function Home() {
   const [state, setState] = useState<AppState>({ kind: "idle" });
   const [mealType, setMealType] = useState<MealType>("午餐");
   const [radius, setRadius] = useState<number>(500);
+  const [highProtein, setHighProtein] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showResult, setShowResult] = useState(false);
 
   useEffect(() => {
     const r = localStorage.getItem("radius");
     if (r) setRadius(Number(r));
+    const hp = localStorage.getItem("highProtein");
+    if (hp) setHighProtein(hp === "true");
   }, []);
 
   const saveSettings = (r: number, m: number) => {
     setRadius(r); localStorage.setItem("radius", String(r));
     setShowSettings(false); void m;
+  };
+
+  const toggleHighProtein = () => {
+    const next = !highProtein;
+    setHighProtein(next);
+    localStorage.setItem("highProtein", String(next));
   };
 
   const handlePick = () => {
@@ -80,7 +96,7 @@ export default function Home() {
         async (pos) => {
           try {
             const results = await fetchNearby(
-              pos.coords.latitude, pos.coords.longitude, String(radius)
+              pos.coords.latitude, pos.coords.longitude, String(radius), highProtein
             );
             if (results.length === 0) { setState({ kind: "empty" }); return; }
             const picked = results[Math.floor(Math.random() * results.length)];
@@ -125,8 +141,22 @@ export default function Home() {
         ))}
       </div>
 
+      <button
+        onClick={toggleHighProtein}
+        className={`mt-4 w-full max-w-sm py-3.5 rounded-2xl flex items-center justify-center gap-2
+          font-semibold text-base transition-all shadow-sm
+          ${highProtein
+            ? "bg-orange-500 text-white shadow-[0_4px_16px_rgba(249,115,22,0.35)]"
+            : "bg-white text-gray-600 hover:shadow-md"
+          }`}
+      >
+        <span className="text-xl">💪</span>
+        高蛋白優先
+        {highProtein && <span className="text-xs bg-white/25 px-2 py-0.5 rounded-full ml-1">ON</span>}
+      </button>
+
       <button onClick={handlePick} disabled={state.kind === "loading"}
-        className="mt-10 w-full max-w-sm py-5 rounded-2xl bg-[#4CAF50] text-white text-xl font-bold
+        className="mt-6 w-full max-w-sm py-5 rounded-2xl bg-[#4CAF50] text-white text-xl font-bold
           shadow-[0_6px_24px_rgba(76,175,80,0.35)] active:scale-95 disabled:opacity-70
           flex items-center justify-center gap-2 transition-all hover:bg-[#43A047]">
         {state.kind === "loading"
@@ -136,6 +166,7 @@ export default function Home() {
 
       <p className="mt-3 text-sm text-gray-400">
         搜尋範圍：{radius < 1000 ? `${radius} 公尺` : `${(radius / 1000).toFixed(1)} 公里`}內的所有餐廳
+        {highProtein && <span className="text-orange-400"> · 高蛋白優先</span>}
       </p>
 
       {state.kind === "error" && (
