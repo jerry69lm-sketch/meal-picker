@@ -28,7 +28,6 @@ interface Props {
 export default function ResultCard({ restaurant, onPickAgain, onClose }: Props) {
   const [imgError, setImgError] = useState(false);
 
-  // Validate photo URL — must start with https:// to be safe on iOS
   const photoSrc =
     restaurant.photo &&
     !imgError &&
@@ -40,10 +39,11 @@ export default function ResultCard({ restaurant, onPickAgain, onClose }: Props) 
     restaurant.name
   )}&ll=${restaurant.geometry.location.lat},${restaurant.geometry.location.lng}`;
 
+  const isHighProtein = (restaurant.proteinScore ?? 0) > 0;
+
   return (
     <div className="bg-white rounded-t-3xl shadow-2xl overflow-hidden max-h-[90dvh] overflow-y-auto animate-pop">
 
-      {/* Photo — plain <img> avoids all Next.js/iOS image validation issues */}
       <div className="relative w-full h-52 bg-gray-100 flex items-center justify-center overflow-hidden">
         {photoSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -64,17 +64,21 @@ export default function ResultCard({ restaurant, onPickAgain, onClose }: Props) 
         >
           ✕
         </button>
+
+        {isHighProtein && (
+          <div className="absolute top-3 left-3 flex items-center gap-1 bg-orange-500 text-white
+            text-xs font-bold px-3 py-1 rounded-full shadow-md z-10">
+            💪 高蛋白
+          </div>
+        )}
       </div>
 
-      {/* Content */}
       <div className="p-5 space-y-3">
 
-        {/* Name */}
         <h2 className="text-2xl font-bold text-gray-900 leading-snug">
           {restaurant.name}
         </h2>
 
-        {/* Rating + distance */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             {restaurant.rating !== null && restaurant.rating !== undefined ? (
@@ -100,28 +104,28 @@ export default function ResultCard({ restaurant, onPickAgain, onClose }: Props) 
           </div>
         </div>
 
-        {/* Address */}
         {restaurant.vicinity ? (
           <p className="text-sm text-gray-500">{restaurant.vicinity}</p>
         ) : null}
 
-        {/* Category tags */}
-        {restaurant.types?.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {restaurant.types.slice(0, 3).map((t) => (
-              <span
-                key={t}
-                className="px-3 py-1 text-xs font-medium rounded-full bg-green-50 text-[#4CAF50]"
-              >
-                {t}
-              </span>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {isHighProtein && (
+            <span className="px-3 py-1 text-xs font-medium rounded-full bg-orange-50 text-orange-500">
+              💪 高蛋白選擇
+            </span>
+          )}
+          {restaurant.types?.slice(0, 3).map((t) => (
+            <span
+              key={t}
+              className="px-3 py-1 text-xs font-medium rounded-full bg-green-50 text-[#4CAF50]"
+            >
+              {t}
+            </span>
+          ))}
+        </div>
 
         <div className="pt-1 border-t border-gray-100" />
 
-        {/* Buttons */}
         <div className="flex gap-3">
           <button
             onClick={onPickAgain}
