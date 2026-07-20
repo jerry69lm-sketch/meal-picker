@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Restaurant } from "@/app/page";
+import { getProteinSuggestions } from "@/lib/proteinSuggestions";
 
 function displayDistance(m: number) {
   return m < 1000 ? `${Math.round(m)} 公尺` : `${(m / 1000).toFixed(1)} 公里`;
@@ -122,6 +123,20 @@ export default function ResultCard({ restaurant, onPickAgain, onClose }: Props) 
               {t}
             </span>
           ))}
+        </div>
+
+        {/* High-protein suggestions */}
+        <div className="bg-green-50/60 rounded-2xl p-4 space-y-2">
+          <p className="text-sm font-bold text-[#388E3C] flex items-center gap-1">
+            💪 高蛋白之選
+          </p>
+          {getProteinSuggestions(restaurant.types).map((s) => (
+            <div key={s.dish} className="flex items-center justify-between text-sm">
+              <span className="text-gray-700">{s.dish}</span>
+              <span className="font-semibold text-[#4CAF50]">{s.protein}</span>
+            </div>
+          ))}
+          <p className="text-[11px] text-gray-400 pt-1">* 估算值，實際因分量而異</p>
         </div>
 
         <div className="pt-1 border-t border-gray-100" />
